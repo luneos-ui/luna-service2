@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2018 LG Electronics, Inc.
+// Copyright (c) 2015-2019 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -77,19 +77,31 @@ bool ManifestData::ProcessManifest(const std::string &path, const std::string &p
     return ProcessManifest(manifest, prefix, data, error);
 }
 
-bool ManifestData::ProcessManifest(const pbnjson::JValue &manifest, const std::string &prefix, ManifestData &data, LSError *error)
+bool ManifestData::ProcessManifest(const pbnjson::JValue &manifest, const std::string &prefix, ManifestData &data,LSError *error)
 {
     for (const auto &f : manifest["roleFiles"].items())
     {
         Permissions perms;
         RolePtr role(nullptr, LSHubRoleUnref);
-        if (!ParseRoleFile(BuildFilename(prefix, f.asString()), prefix, role, perms, error))
+        ServiceToTrustMap trust_level_required;
+        std::string trustLevel;
+        if (!ParseRoleFile(BuildFilename(prefix, f.asString()), prefix, role, perms, trust_level_required, trustLevel,error))
         {
             return false;
         }
 
+        std::string file_name(BuildFilename(prefix, f.asString()));
         data.roles.push_back(std::move(role));
+        data.trustLevel = trustLevel;
         std::move(perms.begin(), perms.end(), std::back_inserter(data.perms));
+
+        //TBD: Fill trust map for required trust
+        // Make sure that require map is filled properly while parsing role file
+         for (const auto &e : trust_level_required)
+        {
+            LOG_LS_DEBUG("%s : for service [%s]", __func__, e.first);
+                data.trust_level_required[e.first] = (e.second);
+        }
     }
 
     for (const auto &f : manifest["roleFilesPub"].items())
@@ -167,6 +179,23 @@ bool ManifestData::ProcessManifest(const pbnjson::JValue &manifest, const std::s
         }
     }
 
+    // Parse groups provided by services
+    for (const auto &f : manifest["groupsFiles"].items())
+    {
+        LOG_LS_DEBUG("Parsing %s \n", f.asString().c_str());
+        ServiceToTrustMap trust_level_provided;
+        if (!ParseGroupsFile(BuildFilename(prefix, f.asString()), trust_level_provided, error))
+        {
+            return false;
+        }
+        std::string file_name(BuildFilename(prefix, f.asString()));
+        for (const auto &e : trust_level_provided)
+        {
+            LOG_LS_DEBUG("%s : for service [%s]", __func__, e.first.c_str());
+            data.trust_level_provided[e.first] = (e.second);
+        }
+        LOG_LS_DEBUG("Completed Parsing %s \n", f.asString().c_str());
+    }
     return true;
 }
 
@@ -186,7 +215,7 @@ void ExternalManifestData::Save()
 
     auto manifest = pbnjson::JDomParser::fromString(data, manifest_schema);
     const char *keys[] = { "roleFiles", "roleFilesPub", "roleFilesPrv", "serviceFiles",
-                           "clientPermissionFiles", "apiPermissionFiles" };
+                           "clientPermissionFiles", "apiPermissionFiles", "groupsFiles" };
     for (const auto &key : keys)
     {
         for (const auto &f :  manifest[key].items())
@@ -213,13 +242,23 @@ void ExternalManifestData::LoadFromMemory()
     {
         auto fn = BuildFilename(prefix, f.asString());
         std::string data = external_manifests_data[fn];
-
+        //TBD: Modify to read required permission and permissionLevel
         Permissions perms;
         RolePtr role(nullptr, LSHubRoleUnref);
-        if (ParseRoleString(data, prefix, role, perms, nullptr))
+        ServiceToTrustMap required_trust_level;
+        std::string trustLevel;
+        if (ParseRoleString(data, prefix, role, perms, required_trust_level, trustLevel, nullptr))
         {
             roles.push_back(std::move(role));
             std::move(perms.begin(), perms.end(), std::back_inserter(this->perms));
+        }
+
+        //TBD: Fill trust map for required trust
+        // Make sure that require map is filled properly while parsing role file
+        for (const auto &e : required_trust_level)
+        {
+            LOG_LS_DEBUG("%s : for [%s]", __func__, e.first.c_str());
+            trust_level_required[e.first] = (e.second);
         }
     }
 
@@ -302,6 +341,19 @@ void ExternalManifestData::LoadFromMemory()
             }
         }
     }
+
+    for (const auto &f : manifest["groupsFiles"].items())
+    {
+        auto fn = BuildFilename(prefix, f.asString());
+        std::string data = external_manifests_data[fn];
+
+        ServiceToTrustMap provided_trust_level;
+        ParseGroupsString(data, provided_trust_level, nullptr);
+        for (const auto &e : provided_trust_level)
+        {
+            trust_level_provided[e.first] = (e.second);
+        }
+    }
 }
 
 void ExternalManifestData::Remove()
@@ -334,6 +386,11 @@ void ExternalManifestData::Remove()
     }
 
     for (const auto &f : manifest["apiPermissionFiles"].items())
+    {
+        external_manifests_data.erase(BuildFilename(prefix, f.asString()));
+    }
+
+    for (const auto &f : manifest["groupsFiles"].items())
     {
         external_manifests_data.erase(BuildFilename(prefix, f.asString()));
     }

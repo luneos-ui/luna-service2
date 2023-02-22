@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2018 LG Electronics, Inc.
+// Copyright (c) 2008-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -479,6 +479,7 @@ _LSTransportMessageIsFdType(const _LSTransportMessage *message)
     {
     case _LSTransportMessageTypeReplyWithFd:
     case _LSTransportMessageTypeQueryNameReply:
+    case _LSTransportMessageTypeQueryProxyNameReply:
     case _LSTransportMessageTypeMonitorConnected:
     case _LSTransportMessageTypeMonitorAcceptClient:
         return true;
@@ -1230,6 +1231,38 @@ _LSTransportMessageGetSenderUniqueName(const _LSTransportMessage *message)
 
 /**
  *******************************************************************************
+ * @brief Get the exe path of sender
+ *
+ * @param  message  IN  message
+ *
+ * @retval name (unique)
+ *******************************************************************************
+ */
+const char*
+_LSTransportMessageGetExePath(const _LSTransportMessage *message) {
+    LS_ASSERT(message != NULL);
+
+    return _LSTransportClientGetExePath(_LSTransportMessageGetClient(message));
+}
+
+/**
+ *******************************************************************************
+ * @brief Get the trustLevel of sender
+ *
+ * @param  message  IN  message
+ *
+ * @retval name (unique)
+ *******************************************************************************
+ */
+const char*
+_LSTransportMessageGetTrustLevel(const _LSTransportMessage *message) {
+    LS_ASSERT(message != NULL);
+
+    return _LSTransportClientTrustLevel(_LSTransportMessageGetClient(message));
+}
+
+/**
+ *******************************************************************************
  * @brief Get the destination service name from the message. This only applies
  * messages sent to the monitor. The returned value points inside the message,
  * so you should copy it if you need it beyond the life of the message.
@@ -1877,6 +1910,99 @@ _LSTransportMessageTypeQueryNameGetAppId(_LSTransportMessage *message)
     return NULL;
 }
 
+/**
+ *******************************************************************************
+ * @brief Get the name that is being queried out of the "QueryProxyName" message.
+ *
+ * @param  message  IN  query name message
+ *
+ * @retval  name of service being looked up
+ *******************************************************************************
+ */
+const char*
+_LSTransportMessageTypeQueryProxyNameGetQueryName(_LSTransportMessage *message) {
+    LS_ASSERT(_LSTransportMessageGetType(message) == _LSTransportMessageTypeQueryProxyName);
+    _LSTransportMessageIter iter;
+    const char *ret = NULL;
+
+    _LSTransportMessageIterInit(message, &iter);
+
+    if (_LSTransportMessageGetString(&iter, &ret)) {
+        return ret;
+    }
+    return NULL;
+}
+
+const char*
+_LSTransportMessageTypeQueryProxyNameGetAppId(_LSTransportMessage *message) {
+    LS_ASSERT(_LSTransportMessageGetType(message) == _LSTransportMessageTypeQueryProxyName);
+
+    _LSTransportMessageIter iter;
+    const char *ret = NULL;
+
+    _LSTransportMessageIterInit(message, &iter);
+
+    _LSTransportMessageIterAdvance(&iter, 1);
+
+    /* skip over the service name */
+    _LSTransportMessageIterNext(&iter);
+
+    if (_LSTransportMessageGetString(&iter, &ret)) {
+        return ret;
+    }
+    return NULL;
+}
+
+const char*
+_LSTransportMessageTypeQueryProxyNameGetOriginName(_LSTransportMessage *message) {
+    LS_ASSERT(_LSTransportMessageGetType(message) == _LSTransportMessageTypeQueryProxyName);
+
+    _LSTransportMessageIter iter;
+    const char *ret = NULL;
+
+    _LSTransportMessageIterInit(message, &iter);
+
+    _LSTransportMessageIterAdvance(&iter, 2);
+
+    if (_LSTransportMessageGetString(&iter, &ret)) {
+        return ret;
+    }
+    return NULL;
+}
+
+const char*
+_LSTransportMessageTypeQueryProxyNameGetOriginId(_LSTransportMessage *message) {
+    LS_ASSERT(_LSTransportMessageGetType(message) == _LSTransportMessageTypeQueryProxyName);
+
+    _LSTransportMessageIter iter;
+    const char *ret = NULL;
+
+    _LSTransportMessageIterInit(message, &iter);
+
+    _LSTransportMessageIterAdvance(&iter, 3);
+
+    if (_LSTransportMessageGetString(&iter, &ret)) {
+        return ret;
+    }
+    return NULL;
+}
+
+const char*
+_LSTransportMessageTypeQueryProxyNameGetOriginExePath(_LSTransportMessage *message) {
+    LS_ASSERT(_LSTransportMessageGetType(message) == _LSTransportMessageTypeQueryProxyName);
+
+    _LSTransportMessageIter iter;
+    const char *ret = NULL;
+
+    _LSTransportMessageIterInit(message, &iter);
+
+    _LSTransportMessageIterAdvance(&iter, 4);
+
+    if (_LSTransportMessageGetString(&iter, &ret)) {
+        return ret;
+    }
+    return NULL;
+}
 
 /**
  * Message argument len
@@ -2407,7 +2533,7 @@ _LSTransportMessageAppendString(_LSTransportMessageIter *iter, const char *str)
         str_len = strlen(str) + 1;
     }
 
-    _LSTransportMessageArgString arg;
+    _LSTransportMessageArgString arg = {};
 
     /* We're mixing strings and 32-bit ints, so we add padding to account for
      * 32-bit ints. If we add new types, we need to make this larger (or do

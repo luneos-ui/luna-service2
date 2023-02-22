@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2018 LG Electronics, Inc.
+// Copyright (c) 2014-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,6 +24,27 @@
 #include "permission.hpp"
 #include "patternqueue.hpp"
 #include "permissions_map.hpp"
+
+#include <fstream>
+
+void DumpToFileActivePerm(const char* filename, const char* dump)
+{
+    if (!filename) return;
+
+    char full_path[256] = {0};
+    strncpy(full_path, "/tmp/", sizeof(full_path) - 1);
+    strncat(full_path, filename, sizeof(full_path) - strlen(full_path) - 1);
+    FILE *fp;
+    // open file for writing 
+    fp = fopen (full_path, "w");
+    if (fp == NULL)
+    {
+        //fprintf(stderr, "\nError opend file\n");
+        return;
+    }
+    fprintf (fp, "%s", dump);
+    fclose(fp);
+}
 
 /// @cond INTERNAL
 /// @addtogroup LunaServiceHubSecurity
@@ -176,6 +197,8 @@ LSHubActivePermissionMapClientAdd(const _LSTransportClient *client, const char *
             active_perm->outbound = _LSHubPatternQueueCopyRef(perm->outbound);
         }
         active_perm->perm_flags = perm->perm_flags;
+        std::string perm_dump = LSHubPermissionDump(perm);
+        LOG_LS_DEBUG("%s: perm_dump [%s]", __func__, perm_dump.c_str());
     }
     else
     {
@@ -197,6 +220,20 @@ LSHubActivePermissionMapClientAdd(const _LSTransportClient *client, const char *
     // Cache security groups for service life-time in bound LSHubPermission
     LSHubPermissionSetProvided(active_perm.get(), groups.GetProvided(lookup_service));
     LSHubPermissionSetRequired(active_perm.get(), groups.GetRequired(lookup_service));
+    LSHubPermissionSetProvidedTrust(active_perm.get(), groups.GetProvidedTrust(lookup_service));
+    LSHubPermissionSetRequiredTrust(active_perm.get(), groups.GetRequiredTrust(lookup_service));
+
+    // Add trust level as string
+    std::string trust = groups.GetRequiredTrustAsString(lookup_service);
+    if (trust.empty())
+    {
+        LOG_LS_DEBUG("%s: ERRRR !! TRUST IS EMPTY",__func__);
+    }
+    else
+    {
+        LOG_LS_DEBUG("%s: SET TRUST to [%s]",__func__, trust.c_str());
+        LSHubPermissionSetTrustString(active_perm.get(), trust.c_str());
+    }
 
     if (!LSHubPermissionGetRequired(active_perm.get()).size() && active_perm->perm_flags == NO_BUS_ROLE)
     {
@@ -213,7 +250,9 @@ LSHubActivePermissionMapClientAdd(const _LSTransportClient *client, const char *
     {
         LSHubPermissionAddRequired(active_perm.get(), PUBLIC_SECGROUP_NAME);
     }
-
+    std::string act_perm_dump = LSHubPermissionDump(active_perm.get());
+    DumpToFileActivePerm("act_perm_LSHubActivePermissionMapClientAdd", act_perm_dump.c_str());
+    LOG_LS_DEBUG("%s: act_perm_dump [%s]", __func__, act_perm_dump.c_str());
     return LSHubActivePermissionMapAddRef(active_perm.get(), active_service_id);
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2018 LG Electronics, Inc.
+// Copyright (c) 2014-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ namespace LS {
  */
 class Handle
 {
-    friend Handle registerService(const char *, bool);
+    friend Handle registerService(const char *);
     friend Handle registerApplicationService(const char *, const char *);
 
 public:
@@ -131,22 +131,6 @@ public:
         if (!LSRegister(name, &_handle, error.get()))
             throw error;
     }
-
-    /**
-     * Registers a new anonymous service.
-     *
-     * @param name the service name, which equals to NULL
-     * @deprecated anonymous services are deprecated, you must define a name for you client
-     */
-    Handle(std::nullptr_t name) LS_DEPRECATED_PUBPRIV;
-
-    /**
-     * Registers a new service with the specified name.
-     * @param name the service name
-     * @param public_service true if we need the service to be public
-     * @deprecated Avoid specification of public/private hub
-     */
-    Handle(const char *name, bool public_service) LS_DEPRECATED_PUBPRIV;
 
     /**
      * Registers a new service with a specified name and an application Id.
@@ -509,6 +493,106 @@ public:
     }
 
     /**
+     * Make a call
+     *
+     * @param origin_exe     origin client's exe_path
+     * @param origin_id      origin client's app_id
+     * @param origin_name    origin client's service name
+     * @param uri            fully qualified path to service's method
+     * @param payload        some string, usually following json object semantics
+     * @param appID          application id
+     * @return call          control object
+     */
+    Call callProxyOneReply(const char *origin_exe,
+                           const char *origin_id,
+                           const char *origin_name,
+                           const char *uri,
+                           const char *payload,
+                           const char *appID = NULL) {
+        Call call;
+        call.callProxy(_handle, origin_exe, origin_id, origin_name, uri, payload, true, appID);
+        return call;
+    }
+
+    /**
+     * Make a call with result handler callback
+     *
+     * @param origin_exe     origin client's exe_path
+     * @param origin_id      origin client's app_id
+     * @param origin_name    origin client's service name
+     * @param uri            fully qualified path to service's method
+     * @param payload        some string, usually following json object semantics
+     * @param func           callback function
+     * @param context        user data.
+     * @param appID          application id
+     * @return call          handler object
+     */
+    Call callProxyOneReply(const char *origin_exe,
+                           const char *origin_id,
+                           const char *origin_name,
+                           const char *uri,
+                           const char *payload,
+                           LSFilterFunc func,
+                           void *context,
+                           const char *appID = NULL) {
+        Call call;
+        call.continueWith(func, context);
+        call.callProxy(_handle, origin_exe, origin_id, origin_name, uri, payload, true, appID);
+        return call;
+    }
+
+    /**
+     * @brief Make a multi-call \n
+     * Returned object will collect arrived messages in internal queue.
+     * Messaged can be obtained with callback or get(...) functions.
+     *
+     * @param origin_exe     origin client's exe_path
+     * @param origin_id      origin client's app_id
+     * @param origin_name    origin client's service name
+     * @param uri            fully qualified path to service's method
+     * @param payload        some string, usually following json object semantics
+     * @param appID          application id
+     * @return call          handler object
+     */
+    Call callProxyMultiReply(const char *origin_exe,
+                             const char *origin_id,
+                             const char *origin_name,
+                             const char *uri,
+                             const char *payload,
+                             const char *appID = NULL) {
+        Call call;
+        call.callProxy(_handle, origin_exe, origin_id, origin_name, uri, payload, false, appID);
+        return call;
+    }
+
+    /**
+     * Make a multi-call with result processing callback
+     *
+     * @param origin_exe     origin client's exe_path
+     * @param origin_id      origin client's app_id
+     * @param origin_name    origin client's service name
+     * @param uri            fully qualified path to service's method
+     * @param payload        some string, usually following json object semantics
+     * @param func           callback function
+     * @param context        context
+     * @param appID          application id
+     * @return call          handler object
+     */
+    Call callProxyMultiReply(const char *origin_exe,
+                             const char *origin_id,
+                             const char *origin_name,
+                             const char *uri,
+                             const char *payload,
+                             LSFilterFunc func,
+                             void *context,
+                             const char *appID = NULL) {
+        Call call;
+        call.continueWith(func, context);
+        call.callProxy(_handle, origin_exe, origin_id, origin_name, uri, payload, false, appID);
+        return call;
+    }
+
+    /**
      * Call a signal to a specific category
      *
      * @param category   category name to monitor
@@ -564,15 +648,5 @@ Handle registerService(const char *name)
 inline
 Handle registerApplicationService(const char *name, const char *app_id)
 { return { name, app_id }; }
-
-/**
- * @deprecated Avoid specification of unnamed service
- */
-Handle registerService(std::nullptr_t = nullptr) LS_DEPRECATED_PUBPRIV;
-
-/**
- * @deprecated Avoid specification of public/service hub
- */
-Handle registerService(const char *name, bool public_service) LS_DEPRECATED_PUBPRIV;
 
 } //namespace LS;

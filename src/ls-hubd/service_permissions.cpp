@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2018 LG Electronics, Inc.
+// Copyright (c) 2008-2019 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -117,7 +117,8 @@ LSHubServicePermissionsAddPermissionRef(LSHubServicePermissions *perms, LSHubPer
 
         std::string perm_str = LSHubPermissionDump(perm);
         std::string found_perm_str = LSHubPermissionDump(found_perm);
-
+        LOG_LS_DEBUG("%s : perm_str [ %s ]", __func__, perm_str.c_str());
+        LOG_LS_DEBUG("%s : found_perm_str [ %s ]", __func__, found_perm_str.c_str());
         if ((found_perm->perm_flags == PRIVATE_BUS_ROLE && perm->perm_flags == PUBLIC_BUS_ROLE) ||
             (found_perm->perm_flags == PUBLIC_BUS_ROLE && perm->perm_flags == PRIVATE_BUS_ROLE))
         {

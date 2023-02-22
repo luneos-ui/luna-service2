@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2018 LG Electronics, Inc.
+// Copyright (c) 2015-2019 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include "service.hpp"
 #include "permission.hpp"
 #include "semantic_version.hpp"
+#include "groups.hpp"
 
 struct Manifest
 {
@@ -98,6 +99,7 @@ public:
     typedef std::vector<RolePtr> Roles;
     typedef std::vector<ServicePtr> Services;
     typedef std::vector<PermissionPtr> Permissions;
+    typedef std::vector<GroupsPtr> Groups;
 
     ManifestData() = default;
 
@@ -113,8 +115,12 @@ public:
     Roles roles;
     Permissions perms;
     Services services;
+    Groups groups;
     CategoryMap requires;
     CategoryMap provides;
+    ServiceToTrustMap trust_level_provided;
+    ServiceToTrustMap trust_level_required;
+	std::string trustLevel;
 };
 
 class ExternalManifestData : public ManifestData

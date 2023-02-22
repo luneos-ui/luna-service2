@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2018 LG Electronics, Inc.
+// Copyright (c) 2008-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,25 +16,28 @@
 
 
 #include <glib.h>
-
+#include <pbnjson.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
 #include <pthread.h>
 #include <errno.h>
 #include <unistd.h>
-
+#include <pbnjson/c/jtypes.h>
 #include <luna-service2/lunaservice.h>
 
+#include <luna-service2/payload.h>
+#include "simple_pbnjson.h"
 #include "base.h"
 #include "category.h"
 #include "message.h"
 #include "subscription.h"
 #include "debug_methods.h"
-#include "transport.h"
+
 #include "clock.h"
 #include "log.h"
 #include "transport_priv.h"
+#include "transport.h"
 #ifdef SECURITY_HACKS_ENABLED
 #include "security_hacks.h"
 #endif
@@ -43,6 +46,8 @@
 
 #include <pmtrace_ls2.h>
 
+#define ENHANCED_ACG
+#define DEFAULT_TRUST_LEVEL "dev"
 
 /** @cond INTERNAL */
 
@@ -50,7 +55,10 @@
 void _LSHandleMessageFailure(_LSTransportMessage *message, _LSTransportMessageFailureType failure_type, void *context);
 void _LSDisconnectHandler(_LSTransportClient *client, _LSTransportDisconnectType type, void *context);
 bool _LSHandleReply(LSHandle *sh, _LSTransportMessage *transport_msg);
-
+#ifdef ENHANCED_ACG
+static LSMessageHandlerResult _LSCheckProvidedTrustedGroups(LSHandle *sh,
+    _LSTransportClient *client, LSMethodEntry *method);
+#endif
 /** @endcond */
 
 /**
@@ -365,12 +373,118 @@ _LSSecurityCheckGroup(const LSTransportBitmaskWord *provides,
     if (!provides || !requires)
         return false;
 
+    LOG_LS_DEBUG("[%s]provide : %d, requires : %d \n", __func__, *provides, *requires);
     int i = 0;
     for (; i < size; i++)
     {
-        if (provides[i] & requires[i])
+        if (provides[i] & requires[i]) {
+            LOG_LS_DEBUG("[%s] Group CHeck pass[provides: %d] [requires: %d][pos: %d] \n",
+            __func__, provides[i], requires[i], i);
+           return true;
+        }
+    }
+    return false;
+}
+
+/** @brief Check if required ACG (of caller) intersect with provided ACG (of the service).
+ *
+ * Every call is tested against ACG by the receiving part. Bitmasks for ACG seem to be
+ * a good choice for good performance.
+ *
+ * @param[in] provides  Bit set of provided ACG
+ * @param[in] requires  Bit set of required ACG
+ * @param[in] size      Size of bit set in bitmask words
+ *
+ * @retval true If bit sets @p provides and @p requires have common bits
+ * @retval false If there's no common bit in @p provides and @p requires
+ */
+static inline bool
+_LSSecurityCheckTrustLevel(const char* provided_trust_level_string,
+                           const char* required_trust_level_string)
+{
+    /* Signed and Unsigned app/service criteria to check for trust level
+        ----------------------------------------------
+        <app/service    |   signed   |  unsigned     |
+        ----------------------------------------------
+        signed          |     o      |     o         |
+        ----------------------------------------------
+        unsigned        |     X      |     o         |
+        ----------------------------------------------
+    */
+
+    bool isProvidedTrusted = false;
+    bool isRequiredTrusted = false;
+
+    if(strcmp(provided_trust_level_string, DEFAULT_TRUST_LEVEL))
+        isProvidedTrusted = true;
+    if(strcmp(required_trust_level_string, DEFAULT_TRUST_LEVEL))
+        isRequiredTrusted = true;
+
+    /* Usigned caller and unsigned callee */
+    if (!isProvidedTrusted && !isRequiredTrusted)
+    {
+        /* Since both are unsigned no trustLevel is specified */
+        return true;
+    }
+
+    if (!isProvidedTrusted || !isRequiredTrusted)
+    {
+        /* Unsigned caller and signed callee */
+        if(isProvidedTrusted)
+            return false;
+        /* Signed caller and unsigned callee */
+        if(isRequiredTrusted)
             return true;
     }
+
+    /* Trust level hierarchy
+
+                      | oem | part | dev |
+                --------------------------
+                oem   |  o  |  o   |  o  |
+                --------------------------
+                part  |  x  |  o   |  o  |
+                --------------------------
+                dev   |  x  |  x   |  o  |
+                --------------------------
+    */
+    if (!strcmp(provided_trust_level_string, required_trust_level_string)) {
+        LOG_LS_DEBUG("[%s] Trust Level Matched \
+                     provided_trust_level_string : %s \
+                     required_trust_level_string : %s \n",
+                     __func__, provided_trust_level_string, required_trust_level_string);
+        return true;
+    }
+    else if(!strcmp("oem", required_trust_level_string))
+    {
+        LOG_LS_DEBUG("[%s]Required trust level [%s] superseeds every other trust level \n",
+                     __func__, required_trust_level_string);
+        return true;
+    }
+    else if(!strcmp("oem", provided_trust_level_string))
+    {
+        LOG_LS_DEBUG("[%s]Required trust level [%s] superseeds every other trust level \n",
+                     __func__, provided_trust_level_string);
+        return false;
+    }
+    else if(!strcmp("part", required_trust_level_string))
+    {
+        LOG_LS_DEBUG("[%s]Required trust level [%s] can access other than OEM \n",
+        __func__, required_trust_level_string);
+        return true;
+    }
+    else if(!strcmp("part", provided_trust_level_string))
+    {
+        LOG_LS_DEBUG("[%s]Required trust level [%s] can access other than OEM \n",
+        __func__, provided_trust_level_string);
+        return false;
+    }
+    else
+    {
+        return false;
+    }
+
+    // TESTING: just to avoid unstable luna service, till feature, otherwise returns false on mismatch
     return false;
 }
 
@@ -412,6 +526,22 @@ LSCategoryMethodCall(LSHandle *sh, LSCategoryTable *category,
         return LSMessageHandlerResultPermissionDenied;
     }
 
+    LOG_LS_DEBUG("[%s]method_name: %s  method->security_provided_groups: %d, client->security_required_groups: %d, LSTransportGetSecurityMaskSize(sh->transport): %d",
+                 __func__, method_name,*method->security_provided_groups, *client->security_required_groups,
+                  LSTransportGetSecurityMaskSize(sh->transport));
+
+#ifdef ENHANCED_ACG
+    if (_LSCheckProvidedTrustedGroups(sh, client, method) == LSMessageHandlerResultPermissionDenied)
+    {
+        LOG_LS_WARNING(MSGID_LS_REQUIRES_TRUST, 3,
+                       PMLOGKS("SERVICE", sender ? sender : "(null)"),
+                       PMLOGKS("CATEGORY", LSMessageGetCategory(message)),
+                       PMLOGKS("METHOD", method_name),
+                      "Service security groups don't allow method call as trust level does not match");
+        return LSMessageHandlerResultPermissionDenied;
+    }
+#endif
+
     char* receiver = g_strdup(sh->name ? sh->name : "(null)");
     bool validateCall = method->flags & LUNA_METHOD_FLAG_VALIDATE_IN;
 
@@ -424,7 +554,7 @@ LSCategoryMethodCall(LSHandle *sh, LSCategoryTable *category,
                      PMLOGKS("SERVICE", receiver),
                      PMLOGKS("CATEGORY", LSMessageGetCategory(message)),
                      PMLOGKS("METHOD", method_name),
-                     PMLOGKFV("FLAGS", "%d", method->flags),
+                      PMLOGKFV("FLAGS", "%d", method->flags),
                      "Called for method that was declared for validation but wasn't supplied with schema");
     }
 
@@ -465,7 +595,7 @@ LSCategoryMethodCall(LSHandle *sh, LSCategoryTable *category,
     {
         ClockGetTime(&end_time);
         ClockDiff(&gap_time, &end_time, &start_time);
-        LOG_LS_DEBUG("TYPE=service handler execution time | TIME=%ld | SERVICE=%s | CATEGORY=%s | METHOD=%s",
+        LOG_LS_DEBUG("TYPE=service handler execution time | TIME=%lld | SERVICE=%s | CATEGORY=%s | METHOD=%s",
                 ClockGetMs(&gap_time), receiver, LSMessageGetCategory(message), method_name);
     }
 
@@ -484,6 +614,106 @@ LSCategoryMethodCall(LSHandle *sh, LSCategoryTable *category,
 
     return LSMessageHandlerResultHandled;
 }
+
+#ifdef ENHANCED_ACG
+LSMessageHandlerResult _LSCheckProvidedTrustedGroups(LSHandle *sh,
+    _LSTransportClient *client, LSMethodEntry *method)
+{
+    LSMessageHandlerResult eResult = LSMessageHandlerResultHandled;
+
+    /* Compare the trust level */
+    GSList *list = LSTransportGetTrustLevelToGroups(sh->transport);
+    if (list)
+    {
+        bool trustLevelFound = false;
+        jvalue_ref providedGroupTrustLevel = NULL;
+        jvalue_ref providedGroupsRef = NULL;
+
+        LOG_LS_INFO(MSGID_LS_NOT_AN_ERROR, 0,"Enhanced ACG \n");
+        // prepare full methods name for pattern matching
+        //char *full_name = g_build_path("/", category_path, m->name, NULL);
+        const LSTransportTrustLevelGroupBitmask *TrustLevel_bitmask = NULL;
+
+        /* Get the provided groups and get the mask */
+        providedGroupsRef = LSTransportGetGroupsFromMask(sh->transport, method->security_provided_groups);
+        if (providedGroupsRef)
+        {
+            char* providedGroup = NULL;
+            for (ssize_t i = 0; i != jarray_size(providedGroupsRef); ++i)
+            {
+                jvalue_ref jgroup = jarray_get(providedGroupsRef, i);
+                raw_buffer provided_raw = jstring_get_fast(jgroup);
+                providedGroup = g_strndup(provided_raw.m_str, provided_raw.m_len);
+                list = LSTransportGetTrustLevelToGroups(sh->transport);
+
+                for (; list; list = g_slist_next(list))
+                {
+                    TrustLevel_bitmask = (const LSTransportTrustLevelGroupBitmask *) list->data;
+
+                    /* Default groups like all are added by default which do not have trust level */
+                    /* Ignore such groups while checking for trust level */
+                    LOG_LS_DEBUG("[%s] providedGroup: %s \n", __func__, providedGroup);
+
+                    if (g_pattern_match_string(TrustLevel_bitmask->group_pattern, providedGroup))
+                    {
+                        if(TrustLevel_bitmask->trustLevel_group_bitmask)
+                        {
+                            LOG_LS_INFO(MSGID_LS_NOT_AN_ERROR, 0, "[%s] found group bit mask : %d \n", __func__,
+                                               *TrustLevel_bitmask->trustLevel_group_bitmask);
+                            providedGroupTrustLevel = LSTransportGetTrustFromMask(sh->transport,
+                                                          TrustLevel_bitmask->trustLevel_group_bitmask);
+														  													  
+							/* Get required group's trust level */
+							if(providedGroupTrustLevel)
+							{
+								char* providedTrustLevel = NULL;
+								for (ssize_t i = 0; i != jarray_size(providedGroupTrustLevel); ++i)
+								{
+									jvalue_ref jgroup = jarray_get(providedGroupTrustLevel, i);
+									raw_buffer provided_raw = jstring_get_fast(jgroup);
+									providedTrustLevel = g_strndup(provided_raw.m_str, provided_raw.m_len);
+
+									if (!_LSSecurityCheckTrustLevel(providedTrustLevel,
+																	client->trust_level_string))
+									{
+										eResult = LSMessageHandlerResultPermissionDenied;
+										LOG_LS_DEBUG("[%s] Tust Not matched [Provided : %s] [required : %s] \n",
+													 __func__, providedTrustLevel,
+													 client->trust_level_string);
+									}
+									else
+									{
+										eResult = LSMessageHandlerResultHandled;
+										trustLevelFound = true;
+									}
+									LOG_LS_DEBUG("LSCategoryMethodCall [ %s]", providedTrustLevel);
+
+									g_free(providedTrustLevel);
+									providedTrustLevel = NULL;
+
+									if (LSMessageHandlerResultHandled == eResult)
+										break;
+								}
+								j_release(&providedGroupTrustLevel);
+							}                            
+                            break;
+                        }
+                    }
+                }
+                g_free(providedGroup);
+                providedGroup = NULL;
+
+                /* Assumption is that only the group bit of the method is set */
+                if(trustLevelFound)
+                    break;
+            }
+            j_release(&providedGroupsRef);
+        }
+    }
+
+    return eResult;
+}
+#endif
 
 static LSMessageHandlerResult
 _LSHandleMethodCall(LSHandle *sh, _LSTransportMessage *transport_msg)
@@ -910,6 +1140,7 @@ _LSRegisterCommon(const char *name, const char *app_id, LSHandle **ret_sh,
     pthread_once(&state.key_once, _LSInit);
 
     _LSTransport *existingTransport = NULL;
+    _LSTransport *new_transport = NULL;
 
     bool is_name_not_empty = name && *name;
     if (is_name_not_empty)
@@ -920,6 +1151,8 @@ _LSRegisterCommon(const char *name, const char *app_id, LSHandle **ret_sh,
     }
 
     LSHandle *sh = g_new0(LSHandle, 1);
+    if (!sh) goto error;
+
     sh->is_public_bus = public_bus;
 
     /* For backward compatibility, convert empty string to NULL */
@@ -932,7 +1165,6 @@ _LSRegisterCommon(const char *name, const char *app_id, LSHandle **ret_sh,
 
     LSHANDLE_SET_VALID(sh, call_ret_addr);
 
-    _LSTransport *new_transport = NULL;
     if (existingTransport)
     {
         if (name && *name && existingTransport->back_sh[public_bus])
@@ -1060,27 +1292,6 @@ error:
 /** @endcond */
 
 /**
- *******************************************************************************
- * @brief Connect to bus by type.
- *
- * @param name       IN  service name
- * @param *ret_sh    OUT pointer to location where handle to service will be stored
- * @param public_bus IN  public/private bus flag
- * @param lserror    OUT set on error
- *
- * @deprecated Avoid specification of public/private hub
- *
- * @return true on success, otherwise false
- ********************************************************************************/
-bool
-LSRegisterPubPriv(const char *name, LSHandle **ret_sh,
-                       bool public_bus,
-                       LSError *lserror)
-{
-    return _LSRegisterCommon(name, NULL, ret_sh, public_bus, LSHANDLE_GET_RETURN_ADDR(), lserror);
-}
-
-/**
  * Return name of luna service handle
  *
  * @param sh In handler
@@ -1135,110 +1346,6 @@ LSRegisterApplicationService(const char *name, const char *app_id, LSHandle **sh
                   LSError *lserror)
 {
     return _LSRegisterCommon(name, app_id, sh, false, LSHANDLE_GET_RETURN_ADDR(), lserror);
-}
-
-/**
- * @deprecated Avoid using LSPalmService, use LSHandle instead.
- */
-bool
-LSUnregisterPalmService(LSPalmService *psh, LSError *lserror)
-{
-    _LSErrorIfFail(psh != NULL, lserror, MSGID_LS_INVALID_HANDLE);
-
-    bool retVal;
-
-    if (psh->public_sh)
-    {
-        retVal = _LSUnregisterCommon(psh->public_sh, true, LSHANDLE_GET_RETURN_ADDR(), lserror );
-        if (!retVal) goto error;
-    }
-
-    if (psh->private_sh)
-    {
-        retVal = _LSUnregisterCommon(psh->private_sh, true, LSHANDLE_GET_RETURN_ADDR(), lserror );
-        if (!retVal) goto error;
-    }
-
-error:
-    g_free(psh);
-    return true;
-}
-
-
-/**
- *******************************************************************************
- * @brief Register a service that may expose public methods on the public bus,
- *        and internal methods on the private bus.
- *
- * @param name                IN  service name
- * @param *ret_public_service OUT pointer to location where handle to service will be stored
- * @param lserror             OUT set on error
- *
- * @deprecated Avoid using LSPalmService, use LSHandle instead.
- *
- * @return true on success, otherwise false
- ********************************************************************************/
-bool
-LSRegisterPalmService(const char *name,
-                  LSPalmService **ret_public_service,
-                  LSError *lserror)
-{
-    _LSErrorIfFailMsg(ret_public_service != NULL, lserror, MSGID_LS_INVALID_HANDLE,
-        -EINVAL, "Invalid parameter ret_public_service to %s", __FUNCTION__);
-
-    bool retVal;
-
-    LSPalmService *psh = g_new0(LSPalmService,1);
-
-    retVal = _LSRegisterCommon(name, NULL, &psh->public_sh, true, LSHANDLE_GET_RETURN_ADDR(), lserror);
-    if (!retVal) goto error;
-
-    retVal = _LSRegisterCommon(name, NULL, &psh->private_sh, false, LSHANDLE_GET_RETURN_ADDR(), lserror);
-    if (!retVal) goto error;
-
-    *ret_public_service = psh;
-    return retVal;
-
-error:
-    (void)LSUnregisterPalmService(psh, NULL);
-    *ret_public_service = NULL;
-    return retVal;
-}
-
-/**
- *******************************************************************************
- * @brief Obtain the private service handle from a public
- *        service.
- *
- * @param psh IN handle to public service
- *
- * @deprecated Avoid using LSPalmService, use LSHandle instead.
- *
- * @retval LSHandle handle to service
- ********************************************************************************/
-LSHandle *
-LSPalmServiceGetPrivateConnection(LSPalmService *psh)
-{
-    if (!psh) return NULL;
-    return psh->private_sh;
-}
-
-/**
- *******************************************************************************
- * @brief Obtain the public service handle from a public
- *        service.
- *
- * @param psh IN handle to public service
- *
- * @deprecated Avoid using LSPalmService, use LSHandle instead.
- *
- * @retval LSHandle handle to service
- ********************************************************************************/
-LSHandle *
-LSPalmServiceGetPublicConnection(LSPalmService *psh)
-{
-    if (!psh) return NULL;
-    return psh->public_sh;
 }
 
 /** @cond INTERNAL */
@@ -1348,42 +1455,6 @@ LSPushRole(LSHandle *sh, const char *role_path, LSError *lserror)
     LSHANDLE_VALIDATE(sh);
 
     return LSTransportPushRole(sh->transport, role_path, sh->is_public_bus, lserror);
-}
-
-/**
- *******************************************************************************
- * @brief Same as LSPushRole(), but for a LSPalmService connection.
- *
- * @param  psh          IN  handle
- * @param  role_path    IN  full path to role file
- * @param  lserror      OUT set on error
- *
- * @deprecated Avoid using LSPalmService, use LSHandle instead.
- *
- * @retval true on success
- * @retval false on failure
- ********************************************************************************/
-bool
-LSPushRolePalmService(LSPalmService *psh, const char *role_path, LSError *lserror)
-{
-    _LSErrorIfFail(psh != NULL, lserror, MSGID_LS_INVALID_HANDLE);
-
-    bool retVal = true;
-
-    if (psh->public_sh)
-    {
-        retVal = LSPushRole(psh->public_sh, role_path, lserror);
-        if (!retVal) goto error;
-    }
-
-    if (psh->private_sh)
-    {
-        retVal = LSPushRole(psh->private_sh, role_path, lserror);
-        if (!retVal) goto error;
-    }
-
-error:
-    return retVal;
 }
 
 /**

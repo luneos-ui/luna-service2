@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2018 LG Electronics, Inc.
+// Copyright (c) 2008-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -174,12 +174,6 @@ typedef struct LSError  LSError;
 * @brief Handle to service.
 */
 typedef struct LSHandle LSHandle;
-
-/**
- * @brief Handle to public service.
- * @deprecated Use LSHandle instead.
- */
-typedef struct LSPalmService LSPalmService;
 
 /**
 * @brief Message object.
@@ -360,11 +354,6 @@ bool LSRegister(const char *name, LSHandle **sh,
 bool LSRegisterApplicationService(const char *name, const char *app_id, LSHandle **sh,
                   LSError *lserror);
 
-bool LSRegisterPubPriv(const char *name, LSHandle **sh,
-                  bool public_bus,
-                  LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
-
 typedef void (*LSDisconnectHandler)(LSHandle *sh, void *user_data);
 bool LSSetDisconnectHandler(LSHandle *sh, LSDisconnectHandler disconnect_handler,
                     void *user_data, LSError *lserror);
@@ -389,31 +378,7 @@ bool LSUnregister(LSHandle *service, LSError *lserror);
 
 const char * LSHandleGetName(LSHandle *sh);
 
-/* Palm Services */
-
-bool LSRegisterPalmService(const char *name,
-                  LSPalmService **ret_palm_service,
-                  LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
-
-bool LSUnregisterPalmService(LSPalmService *psh, LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
-
-bool LSPalmServiceRegisterCategory(LSPalmService *psh,
-    const char *category,
-    LSMethod *methods_public, LSMethod *methods_private,
-    LSSignal *langis, void *category_user_data, LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
-
-LSHandle * LSPalmServiceGetPrivateConnection(LSPalmService *psh)
-    LS_DEPRECATED_PUBPRIV;
-LSHandle * LSPalmServiceGetPublicConnection(LSPalmService *psh)
-    LS_DEPRECATED_PUBPRIV;
-
 bool LSPushRole(LSHandle *sh, const char *role_path, LSError *lserror);
-bool LSPushRolePalmService(LSPalmService *psh, const char *role_path, LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
-
 /** @} END OF LunaServiceRegistration */
 
 /**
@@ -424,8 +389,6 @@ bool LSPushRolePalmService(LSPalmService *psh, const char *role_path, LSError *l
 /* LSMessage (Luna Service Message) functions */
 
 LSHandle * LSMessageGetConnection(LSMessage *message);
-bool LSMessageIsPublic(LSPalmService *psh, LSMessage *message)
-    LS_DEPRECATED_PUBPRIV;
 
 void LSMessageRef(LSMessage *message);
 void LSMessageUnref(LSMessage *message);
@@ -440,6 +403,9 @@ const char * LSMessageGetApplicationID(LSMessage *message);
 
 const char * LSMessageGetSender(LSMessage *message);
 const char * LSMessageGetSenderServiceName(LSMessage *message);
+const char * LSMessageGetSenderExePath(LSMessage *message);
+const char * LSMessageGetSenderTrustLevel(LSMessage *message);
+
 const char * LSMessageGetCategory(LSMessage *message);
 const char * LSMessageGetMethod(LSMessage *message);
 
@@ -473,17 +439,9 @@ GMainContext * LSGmainGetContext(LSHandle *sh, LSError *lserror);
 bool LSGmainAttach(LSHandle *sh, GMainLoop *mainLoop, LSError *lserror);
 bool LSGmainContextAttach(LSHandle *sh, GMainContext *mainContext, LSError *lserror);
 
-bool LSGmainAttachPalmService(LSPalmService *psh, GMainLoop *mainLoop, LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
-bool LSGmainContextAttachPalmService(LSPalmService *psh, GMainContext *mainLoop, LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
-
 bool LSGmainDetach(LSHandle *sh, LSError *lserror);
 
 bool LSGmainSetPriority(LSHandle *sh, int priority, LSError *lserror);
-
-bool LSGmainSetPriorityPalmService(LSPalmService *psh, int priority, LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
 
 /** @} END OF LunaServiceMainloop */
 
@@ -546,6 +504,32 @@ bool LSCallOneReply(LSHandle *sh, const char *uri, const char *payload,
        LSFilterFunc callback, void *ctx,
        LSMessageToken *ret_token, LSError *lserror);
 
+bool LSCallProxy(LSHandle *sh, const char *origin_exe,
+                 const char *origin_id, const char *origin_name,
+                 const char *uri, const char *payload,
+                 LSFilterFunc callback, void *ctx,
+                 LSMessageToken *ret_token, LSError *lserror);
+
+bool LSCallProxyOneReply(LSHandle *sh, const char *origin_exe,
+                         const char *origin_id, const char *origin_name,
+                         const char *uri, const char *payload,
+                         LSFilterFunc callback, void *ctx,
+                         LSMessageToken *ret_token, LSError *lserror);
+
+bool LSCallProxyFromApplication(LSHandle *sh, const char *origin_exe,
+                                const char *origin_id, const char *origin_name,
+                                const char *uri, const char *payload,
+                                const char *applicationID,
+                                LSFilterFunc callback, void *ctx,
+                                LSMessageToken *ret_token, LSError *lserror);
+
+bool LSCallProxyFromApplicationOneReply(LSHandle *sh, const char *origin_exe,
+                                        const char *origin_id, const char *origin_name,
+                                        const char *uri, const char *payload,
+                                        const char *applicationID,
+                                        LSFilterFunc callback, void *ctx,
+                                        LSMessageToken *ret_token, LSError *lserror);
+
 bool LSCallFromApplication(LSHandle *sh, const char *uri, const char *payload,
        const char *applicationID,
        LSFilterFunc callback, void *ctx,
@@ -596,18 +580,11 @@ void LSSubscriptionRemove(LSSubscriptionIter *iter);
 bool LSSubscriptionReply(LSHandle *sh, const char *key,
                     const char *payload, LSError *lserror);
 
-bool LSSubscriptionRespond(LSPalmService *psh, const char *key,
-                      const char *payload, LSError *lserror)
-    LS_DEPRECATED_PUBPRIV;
-
 bool LSSubscriptionPost(LSHandle *sh, const char *category,
         const char *method,
         const char *payload, LSError *lserror);
 
 unsigned int LSSubscriptionGetHandleSubscribersCount(LSHandle *sh, const char *key);
-
-unsigned int LSSubscriptionGetServiceSubscribersCount(LSPalmService *psh, const char *key)
-    LS_DEPRECATED_PUBPRIV;
 
 /** @} END OF LunaServiceSubscription */
 
@@ -629,11 +606,6 @@ bool LSSignalCall(LSHandle *sh,
          LSError *lserror);
 
 bool LSSignalCallCancel(LSHandle *sh, LSMessageToken token, LSError *lserror);
-
-
-bool LSRegisterServerStatus(LSHandle *sh, const char *serviceName,
-              LSServerStatusFunc func, void *ctx, LSError *lserror)
-    LS_DEPRECATED_MSG("Use LSRegisterServerStatusEx instead");
 
 bool LSRegisterServerStatusEx(LSHandle *sh, const char *serviceName,
                               LSServerStatusFunc func, void *ctxt,

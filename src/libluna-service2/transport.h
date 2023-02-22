@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2018 LG Electronics, Inc.
+// Copyright (c) 2008-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -121,6 +121,7 @@ bool _LSTransportSendMessage(_LSTransportMessage *message, _LSTransportClient *c
                         LSMessageToken *token, LSError *lserror);
 void _LSTransportAddInitialWatches(_LSTransport *transport, GMainContext *context);
 bool _LSTransportGetPrivileged(const _LSTransport *tansport);
+bool _LSTransportGetProxyStatus(const _LSTransport *tansport);
 
 gboolean _LSTransportAcceptConnection(GIOChannel *source, GIOCondition condition, gpointer data);
 gboolean _LSTransportReceiveClient(GIOChannel *source, GIOCondition condition, gpointer data);
@@ -128,7 +129,9 @@ gboolean _LSTransportSendClient(GIOChannel *source, GIOCondition condition, gpoi
 
 bool _LSTransportIsHub(void);
 
-bool LSTransportSend(_LSTransport *transport, const char *service_name, bool is_public_bus,
+bool LSTransportSend(_LSTransport *transport, const char *origin_exe,
+                     const char *origin_id, const char *origin_name,
+                     const char *service_name, bool is_public_bus,
                      const char *category, const char *method, const char *payload, const char* applicationId,
                      LSMessageToken *token, LSError *lserror);
 bool LSTransportSendMethodToHub(_LSTransport *transport, const char* method, const char* payload,
@@ -157,6 +160,10 @@ bool _LSTransportNodeUp(_LSTransport *transport, bool is_public_bus, LSError *ls
 
 bool _LSTransportInitializeSecurityGroups(_LSTransport *transport, const char *map_json, int length);
 
+bool _LSTransportInitializeTrustLevel(_LSTransport *transport, const char * provided_map_json
+                        , int provided_map_length,  const char * required_map_json, int required_map_length
+                        , const char * trust_as_string, int trust_string_length);
+
 /** @brief Category pattern ACG bitmask
  *
  * When a new category is registered, every method is assigned a bitmask (ACG set) based
@@ -168,15 +175,36 @@ typedef struct LSTransportCategoryBitmask {
     gboolean match_category_only;           /**< Does the pattern match only category? */
 } LSTransportCategoryBitmask;
 
+typedef struct LSTransportTrustLevelGroupBitmask {
+    GPatternSpec *group_pattern;         /**< Category/method pattern */
+    LSTransportBitmaskWord *trustLevel_group_bitmask;  /**< ACG bitmask */
+    gboolean match_group_only;           /**< Does the pattern match only category? */
+} LSTransportTrustLevelGroupBitmask;
+
 LSTransportCategoryBitmask *LSTransportCategoryBitmaskNew(const char *pattern,
+                                                          LSTransportBitmaskWord *bitmask);
+LSTransportCategoryBitmask *LSTransportTrustLevelBitmaskNew(const char *pattern,
                                                           LSTransportBitmaskWord *bitmask);
 
 void LSTransportCategoryBitmaskFree(LSTransportCategoryBitmask *v);
+void LSTransportTrustLevelGroupBitmaskFree(LSTransportTrustLevelGroupBitmask *v);
 
 size_t LSTransportGetSecurityMaskSize(_LSTransport *transport);
 GSList *LSTransportGetCategoryGroups(_LSTransport *transport);
 jvalue_ref LSTransportGetGroupsFromMask(_LSTransport *transport, LSTransportBitmaskWord *mask);
 
+jvalue_ref LSTransportGetTrustFromMask(_LSTransport *transport, LSTransportBitmaskWord *mask);
+GSList *LSTransportGetTrustLevelToGroups(_LSTransport *transport);
+
+#ifdef LS_TRACK_MESSAGE
+jvalue_ref LSTransportGetConnections(_LSTransport *transport);
+jvalue_ref LSTransportGetMessages(_LSTransport *transport);
+
+void LSTransportAddMessage(_LSTransport *transport, LSMessage *message);
+void LSTransportRemoveMessage(_LSTransport *transport, LSMessage *message);
+#endif
+size_t LSTransportGetTrustLevelSecurityMaskSize(_LSTransport *transport);
+const char* LSTransportGetTrustLevelAsString(_LSTransport *transport);
 
 #ifdef SECURITY_COMPATIBILITY
 

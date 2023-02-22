@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2018 LG Electronics, Inc.
+// Copyright (c) 2008-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -65,6 +65,7 @@ struct LSTransportClient {
     char *unique_name;                  /**< globally unique address */
     char *service_name;                 /**< well-known name (e.g., com.palm.foo) */
     char *app_id;                       /**< application id for non-native applications */
+    char *exe_path;                     /**<exe_path */
     _LSTransportClientState state;      /* TODO: locking? */
     _LSTransport *transport;            /**< ptr back to overall transport obj */
     _LSTransportChannel channel;
@@ -74,6 +75,9 @@ struct LSTransportClient {
     bool is_dynamic;                    /**< true for a dynamic service */
     LSTransportBitmaskWord *security_required_groups; /**< bitmask (see security_mask_size in struct LSTransport) */
     _LSTransportClientPermissions permissions;
+    LSTransportBitmaskWord *required_trust_level;  /**< bitmask (see security_mask_size in struct LSTransport) */
+    char *trust_level_string;                      /** < trust level as string */
+    //TBD: We still need trust level here?
 };
 
 _LSTransportClient* _LSTransportClientNew(_LSTransport* transport, int fd, const char *service_name, const char *unique_name, _LSTransportOutgoing *outgoing);
@@ -87,16 +91,24 @@ void _LSTransportClientSetUniqueName(_LSTransportClient *client, char *unique_na
 const char* _LSTransportClientGetApplicationId(const _LSTransportClient *client);
 void _LSTransportClientSetApplicationId(_LSTransportClient *client, const char *app_id);
 const char* _LSTransportClientGetServiceName(const _LSTransportClient *client);
+const char*  _LSTransportClientGetTrustString(const _LSTransportClient *client);
+const char* _LSTransportClientGetTrust(const _LSTransportClient *client);
+const char* _LSTransportClientGetExePath(const _LSTransportClient *client);
+const char* _LSTransportClientTrustLevel(const _LSTransportClient *client);
 _LSTransportChannel* _LSTransportClientGetChannel(_LSTransportClient *client);
 _LSTransport* _LSTransportClientGetTransport(const _LSTransportClient *client);
 const _LSTransportCred* _LSTransportClientGetCred(const _LSTransportClient *client);
 bool _LSTransportClientAllowInboundCalls(const _LSTransportClient *client);
 bool _LSTransportClientAllowOutboundCalls(const _LSTransportClient *client);
-
+void _LSTransportClientSetTrustString(_LSTransportClient *client, const char *trust);
 // Requires groups initialization. json - array of strings. a string - security group
 // Ex.: ["camera", "torch"]
 bool _LSTransportClientInitializeSecurityGroups(_LSTransportClient *client, const char *groups_json);
 
+// Requires groups initialization. json - array of strings. a string - security group
+// Ex.: ["camera", "torch"]
+bool _LSTransportClientInitializeTrustLevel(_LSTransportClient *client, const char *trust_level);
+bool _LSTransportClientSetExePath(_LSTransportClient *client, const char *exe_path);
 /** @endcond */
 
 #endif      // _TRANSPORT_CLIENT_H_

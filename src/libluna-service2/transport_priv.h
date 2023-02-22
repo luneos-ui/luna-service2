@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2018 LG Electronics, Inc.
+// Copyright (c) 2008-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -88,7 +88,14 @@ struct LSTransport {
     GSList                  *category_groups;   /*<< List of LSTransportCategoryBitmask */
     size_t                  security_mask_size; /*<< count of LSTransportBitmaskWord (each bit represent one security group) */
 
+    GHashTable              *provided_trust_level_map;    /*<< trust level : bit number */
+    GSList                  *provided_trust_level_to_group_map;/* << List of LSTRansportTrustlevelBitmask */
+
+    size_t                  trust_security_mask_size; /*<< count of LSTransportBitmaskWord (each bit represent one security group) */
+    char                    *trust_as_string; /* << trust level as string */
+
     bool                    privileged;         /*<< true if we are a privileged service */
+    bool                    proxy;              /*<< true if we are a proxy service */
 
 #ifdef SECURITY_COMPATIBILITY
     bool                    is_old_config;      /*<< true if this transport for old-configured service */

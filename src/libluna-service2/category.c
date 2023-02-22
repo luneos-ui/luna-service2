@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2018 LG Electronics, Inc.
+// Copyright (c) 2014-2021 LG Electronics, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -210,7 +210,7 @@ static jschema_ref prepare_schema(jvalue_ref schema_value, jvalue_ref defs, LSEr
     LS_ASSERT(orig_defs == NULL || mixed_defs != NULL);
 
     /* mix defs into original schema */
-    jvalue_ref mixed_schema_value;
+    jvalue_ref mixed_schema_value = NULL;
     if (mixed_defs != NULL)
     {
         mixed_schema_value = jvalue_shallow(schema_value);
@@ -414,7 +414,6 @@ LSRegisterCategoryAppend(LSHandle *sh, const char *category,
          * We've already registered the category, so free the unneeded
          * category_path_query. This will happen when we call
          * LSRegisterCategoryAppend multiple times with the same category
-         * (i.e., LSPalmServiceRegisterCategory)
          */
         g_free(category_path_query);
         category_path_query = NULL;
@@ -437,7 +436,7 @@ LSRegisterCategoryAppend(LSHandle *sh, const char *category,
                              PMLOGKFV("FLAGS", "%d", m->flags),
                              "Request to register method with invalid flags");
             }
-
+            //printf("[%s] sh->name: %s, category: %s m->name : %s \n", __func__, sh->name, category, m->name);  
             LSMethodEntry *entry = g_hash_table_lookup(table->methods, m->name);
             if (entry == NULL)
             {
@@ -467,6 +466,7 @@ LSRegisterCategoryAppend(LSHandle *sh, const char *category,
                         BitMaskBitwiseOr(entry->security_provided_groups,
                                          category_bitmask->group_bitmask,
                                          LSTransportGetSecurityMaskSize(sh->transport));
+                        //printf("[%s] entry->security_provided_groups: %d \n", __func__, *entry->security_provided_groups);
                     }
                 }
 
@@ -504,54 +504,6 @@ LSRegisterCategoryAppend(LSHandle *sh, const char *category,
     }
 
     return true;
-}
-
-/**
- ********************************************************************************
- * @brief Register public methods and private methods.
- *
- * @param  psh                 IN  handle to public service
- * @param  category            IN  category name
- * @param  methods_public      IN  public methods to register
- * @param  methods_private     IN  private methods to register
- * @param  signals             IN  signals
- * @param  category_user_data  IN  @see LSCategorySetData
- * @param  lserror             OUT set on error
- *
- * @deprecated Avoid using LSPalmService, use LSHandle instead.
- *
- * @return true on success, otherwise false
- ********************************************************************************/
-bool
-LSPalmServiceRegisterCategory(LSPalmService *psh,
-    const char *category, LSMethod *methods_public, LSMethod *methods_private,
-    LSSignal *signals, void *category_user_data, LSError *lserror)
-{
-    bool retVal;
-
-    retVal = LSRegisterCategoryAppend(psh->public_sh,
-        category, methods_public, signals, lserror);
-    if (!retVal) goto error;
-
-    retVal = LSCategorySetData(psh->public_sh, category,
-                      category_user_data, lserror);
-    if (!retVal) goto error;
-
-    /* Private bus is union of public and private methods. */
-
-    retVal = LSRegisterCategoryAppend(psh->private_sh,
-        category, methods_private, signals, lserror);
-    if (!retVal) goto error;
-
-    retVal = LSRegisterCategoryAppend(psh->private_sh,
-        category, methods_public, NULL, lserror);
-    if (!retVal) goto error;
-
-    retVal = LSCategorySetData(psh->private_sh, category,
-                      category_user_data, lserror);
-    if (!retVal) goto error;
-error:
-    return retVal;
 }
 
 /**
