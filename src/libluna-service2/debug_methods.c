@@ -120,15 +120,15 @@ _LSPrivateGetMallinfo(LSHandle* sh, LSMessage *message, void *ctx)
      * mallinfo: {key: int,...}
      */
 
-    typedef struct mallinfo (*mallinfo_t)();
+    typedef struct mallinfo2 (*mallinfo_t)();
     static mallinfo_t mallinfo_p = NULL;
 
     if (mallinfo_p == NULL) {
-        mallinfo_p = (mallinfo_t)dlsym(RTLD_DEFAULT, "mallinfo");
+        mallinfo_p = (mallinfo_t)dlsym(RTLD_DEFAULT, "mallinfo2");
         if (mallinfo_p == NULL)
             mallinfo_p = (mallinfo_t)-1;
     }
-    struct mallinfo mi;
+    struct mallinfo2 mi;
     if (mallinfo_p != (mallinfo_t)-1) {
         mi = mallinfo_p();
     } else {

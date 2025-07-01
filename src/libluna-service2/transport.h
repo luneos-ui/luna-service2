@@ -41,6 +41,9 @@ typedef struct LSTransport _LSTransport;
 #include "transport_security.h"
 #include "transport_utils.h"
 
+// avoid inline
+#define inline
+
 /* older versions of gcc only recognize __FUNCTION__ */
 #if (__STDC_VERSION__ < 199901L)
 # if (__GNUC__ >= 2)

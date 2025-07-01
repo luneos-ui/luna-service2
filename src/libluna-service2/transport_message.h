@@ -26,11 +26,7 @@
 
 #include "transport_shm.h"
 
-#ifdef LUNA_SERVICE_UNIT_TEST
 #define INLINE
-#else
-#define INLINE inline
-#endif
 
 /**
  * @addtogroup LunaServiceTransportMessage

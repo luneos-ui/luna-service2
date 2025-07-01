@@ -24,7 +24,6 @@
 #include "base.h"
 
 #define SUBSCRIPTION_DEBUG
-#define MALLOC_DEBUG
 #define INTROSPECTION_DEBUG
 
 #ifdef SUBSCRIPTION_DEBUG

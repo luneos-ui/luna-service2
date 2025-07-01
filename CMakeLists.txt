@@ -42,7 +42,7 @@ webos_add_compiler_flags(ALL ${PBNJSON_C_CFLAGS_OTHER})
 # check if we have PmLogLib
 pkg_check_modules(PMLOGLIB REQUIRED PmLogLib>=3.0.2)
 include_directories(${PMLOGLIB_INCLUDE_DIRS})
-webos_add_compiler_flags(ALL ${PMLOGLIB_CFLAGS_OTHER})
+webos_add_compiler_flags(ALL ${PMLOGLIB_CFLAGS_OTHER} -Wno-incompatible-pointer-types)
 
 include(webOS/LegacyDefines)
 
